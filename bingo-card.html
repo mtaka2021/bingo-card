@@ -209,6 +209,72 @@
       color: #ff2e62;
     }
 
+    .action.verify {
+      display: none;
+      grid-column: 1 / -1;
+      color: white;
+      background: linear-gradient(135deg, #ff2e62, #8c35ff);
+    }
+
+    .action.verify.visible {
+      display: block;
+    }
+
+    .dialog {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: none;
+      place-items: center;
+      padding: 18px;
+      background: rgba(20, 20, 46, 0.72);
+    }
+
+    .dialog.visible {
+      display: grid;
+    }
+
+    .dialog-card {
+      width: min(100%, 380px);
+      padding: 18px;
+      border-radius: 22px;
+      background: white;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+      text-align: center;
+    }
+
+    .dialog-card h2 {
+      margin: 2px 0 10px;
+      font-size: 28px;
+      line-height: 1.1;
+      color: #ff2e62;
+      font-weight: 1000;
+    }
+
+    .qr-box {
+      display: grid;
+      place-items: center;
+      margin: 12px auto;
+      padding: 12px;
+      width: min(100%, 292px);
+      border-radius: 16px;
+      background: #fff;
+      border: 4px solid #202046;
+    }
+
+    #bingoQr {
+      width: 256px;
+      height: 256px;
+      image-rendering: pixelated;
+    }
+
+    .dialog-text {
+      margin: 8px 0 14px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
     .meta,
     .note {
       margin: 8px 4px 0;
@@ -245,6 +311,7 @@
     </section>
 
     <section class="actions">
+      <button id="verifyButton" class="action verify" type="button">BINGO確認QR</button>
       <button id="newCardButton" class="action primary" type="button">新しいカード作成</button>
       <button id="resetButton" class="action danger" type="button">リセット</button>
     </section>
@@ -252,6 +319,17 @@
     <p id="createdAt" class="meta"></p>
     <p class="note">番号が呼ばれたらセルをタップしてください。FREEは最初から選択済みです。同じ端末では再読み込みしてもカードとタップ状態が保持されます。</p>
   </main>
+
+  <section id="qrDialog" class="dialog" role="dialog" aria-modal="true" aria-labelledby="qrTitle">
+    <div class="dialog-card">
+      <h2 id="qrTitle">BINGO確認</h2>
+      <div class="qr-box">
+        <canvas id="bingoQr" width="256" height="256"></canvas>
+      </div>
+      <p id="qrLineText" class="dialog-text"></p>
+      <button id="closeQrButton" class="action danger" type="button">閉じる</button>
+    </div>
+  </section>
 
   <script>
     (() => {
@@ -270,12 +348,35 @@
       const grid = document.getElementById("cardGrid");
       const statusBadge = document.getElementById("statusBadge");
       const createdAt = document.getElementById("createdAt");
+      const verifyButton = document.getElementById("verifyButton");
       const newCardButton = document.getElementById("newCardButton");
       const resetButton = document.getElementById("resetButton");
+      const qrDialog = document.getElementById("qrDialog");
+      const closeQrButton = document.getElementById("closeQrButton");
+      const qrCanvas = document.getElementById("bingoQr");
+      const qrLineText = document.getElementById("qrLineText");
 
       let state = loadState();
 
       render();
+
+      verifyButton.addEventListener("click", () => {
+        const line = getFirstBingoLine();
+        if (!line) {
+          alert("まだBINGOになっていません。");
+          return;
+        }
+
+        const values = line.map(index => index === FREE_INDEX ? 0 : state.numbers[index]);
+        const payload = `BINGO1:${values.join(",")}`;
+        drawQRCode(qrCanvas, payload);
+        qrLineText.textContent = `確認番号: ${values.map(value => value === 0 ? "FREE" : value).join(" / ")}`;
+        qrDialog.classList.add("visible");
+      });
+
+      closeQrButton.addEventListener("click", () => {
+        qrDialog.classList.remove("visible");
+      });
 
       newCardButton.addEventListener("click", () => {
         if (!confirm("新しいカードを作成しますか？現在のカードとタップ状態は消えます。")) {
@@ -394,8 +495,11 @@
         if (result === "bingo") {
           statusBadge.textContent = "BINGO!!";
           statusBadge.className = "badge bingo";
+          verifyButton.classList.add("visible");
           return;
         }
+
+        verifyButton.classList.remove("visible");
 
         if (result === "reach") {
           statusBadge.textContent = "リーチ！";
@@ -429,6 +533,10 @@
         return "none";
       }
 
+      function getFirstBingoLine() {
+        return getLines().find(line => line.every(index => state.marked[index]));
+      }
+
       function getLines() {
         const lines = [];
 
@@ -448,6 +556,254 @@
 
       function saveState() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      }
+
+      function drawQRCode(canvas, text) {
+        const modules = createQRCodeModules(text);
+        const context = canvas.getContext("2d");
+        const size = modules.length;
+        const quietZone = 4;
+        const scale = Math.floor(canvas.width / (size + quietZone * 2));
+        const offset = Math.floor((canvas.width - (size + quietZone * 2) * scale) / 2) + quietZone * scale;
+
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.fillStyle = "#000000";
+
+        for (let row = 0; row < size; row += 1) {
+          for (let column = 0; column < size; column += 1) {
+            if (modules[row][column]) {
+              context.fillRect(offset + column * scale, offset + row * scale, scale, scale);
+            }
+          }
+        }
+      }
+
+      function createQRCodeModules(text) {
+        const version = 2;
+        const size = 25;
+        const dataCodewords = 34;
+        const ecCodewords = 10;
+        const modules = Array.from({ length: size }, () => Array(size).fill(false));
+        const reserved = Array.from({ length: size }, () => Array(size).fill(false));
+
+        placeFinder(modules, reserved, 0, 0);
+        placeFinder(modules, reserved, size - 7, 0);
+        placeFinder(modules, reserved, 0, size - 7);
+        placeTiming(modules, reserved);
+        placeAlignment(modules, reserved, 18, 18);
+        reserveFormatAreas(reserved);
+        modules[4 * version + 9][8] = true;
+        reserved[4 * version + 9][8] = true;
+
+        const data = makeDataCodewords(text, dataCodewords);
+        const error = makeErrorCodewords(data, ecCodewords);
+        const bits = [...data, ...error].flatMap(byte => byteToBits(byte));
+        placeDataBits(modules, reserved, bits);
+        placeFormatBits(modules, reserved);
+
+        return modules;
+      }
+
+      function makeDataCodewords(text, capacity) {
+        const bytes = Array.from(new TextEncoder().encode(text));
+        const bits = [0, 1, 0, 0, ...byteToBits(bytes.length)];
+        bytes.forEach(byte => bits.push(...byteToBits(byte)));
+
+        const maxBits = capacity * 8;
+        const terminator = Math.min(4, maxBits - bits.length);
+        for (let index = 0; index < terminator; index += 1) {
+          bits.push(0);
+        }
+
+        while (bits.length % 8 !== 0) {
+          bits.push(0);
+        }
+
+        const data = [];
+        for (let index = 0; index < bits.length; index += 8) {
+          data.push(bitsToByte(bits.slice(index, index + 8)));
+        }
+
+        const pads = [0xec, 0x11];
+        let padIndex = 0;
+        while (data.length < capacity) {
+          data.push(pads[padIndex % 2]);
+          padIndex += 1;
+        }
+
+        return data.slice(0, capacity);
+      }
+
+      function makeErrorCodewords(data, degree) {
+        const generator = makeGenerator(degree);
+        const result = Array(degree).fill(0);
+
+        data.forEach(byte => {
+          const factor = byte ^ result.shift();
+          result.push(0);
+
+          generator.forEach((coefficient, index) => {
+            result[index] ^= gfMultiply(coefficient, factor);
+          });
+        });
+
+        return result;
+      }
+
+      function makeGenerator(degree) {
+        let polynomial = [1];
+        for (let index = 0; index < degree; index += 1) {
+          polynomial = multiplyPolynomial(polynomial, [1, gfPow(2, index)]);
+        }
+        return polynomial.slice(1);
+      }
+
+      function multiplyPolynomial(left, right) {
+        const result = Array(left.length + right.length - 1).fill(0);
+        left.forEach((leftValue, leftIndex) => {
+          right.forEach((rightValue, rightIndex) => {
+            result[leftIndex + rightIndex] ^= gfMultiply(leftValue, rightValue);
+          });
+        });
+        return result;
+      }
+
+      function gfPow(value, power) {
+        let result = 1;
+        for (let index = 0; index < power; index += 1) {
+          result = gfMultiply(result, value);
+        }
+        return result;
+      }
+
+      function gfMultiply(left, right) {
+        let result = 0;
+        let a = left;
+        let b = right;
+
+        while (b > 0) {
+          if ((b & 1) !== 0) {
+            result ^= a;
+          }
+          a <<= 1;
+          if ((a & 0x100) !== 0) {
+            a ^= 0x11d;
+          }
+          b >>= 1;
+        }
+
+        return result;
+      }
+
+      function placeFinder(modules, reserved, x, y) {
+        for (let row = -1; row <= 7; row += 1) {
+          for (let column = -1; column <= 7; column += 1) {
+            const xx = x + column;
+            const yy = y + row;
+            if (!isInside(modules.length, xx, yy)) {
+              continue;
+            }
+
+            const isDark = column >= 0 && column <= 6 && row >= 0 && row <= 6
+              && (column === 0 || column === 6 || row === 0 || row === 6 || (column >= 2 && column <= 4 && row >= 2 && row <= 4));
+
+            modules[yy][xx] = isDark;
+            reserved[yy][xx] = true;
+          }
+        }
+      }
+
+      function placeTiming(modules, reserved) {
+        for (let index = 8; index < modules.length - 8; index += 1) {
+          const isDark = index % 2 === 0;
+          modules[6][index] = isDark;
+          modules[index][6] = isDark;
+          reserved[6][index] = true;
+          reserved[index][6] = true;
+        }
+      }
+
+      function placeAlignment(modules, reserved, x, y) {
+        for (let row = -2; row <= 2; row += 1) {
+          for (let column = -2; column <= 2; column += 1) {
+            const xx = x + column;
+            const yy = y + row;
+            const isDark = Math.max(Math.abs(column), Math.abs(row)) !== 1;
+            modules[yy][xx] = isDark;
+            reserved[yy][xx] = true;
+          }
+        }
+      }
+
+      function reserveFormatAreas(reserved) {
+        const size = reserved.length;
+        for (let index = 0; index <= 8; index += 1) {
+          if (index !== 6) {
+            reserved[8][index] = true;
+            reserved[index][8] = true;
+          }
+        }
+        for (let index = 0; index < 8; index += 1) {
+          reserved[8][size - 1 - index] = true;
+          reserved[size - 1 - index][8] = true;
+        }
+      }
+
+      function placeFormatBits(modules, reserved) {
+        const size = modules.length;
+        const bits = "111011111000100".split("").map(Number);
+        const first = [[8,0],[8,1],[8,2],[8,3],[8,4],[8,5],[8,7],[8,8],[7,8],[5,8],[4,8],[3,8],[2,8],[1,8],[0,8]];
+        const second = [[size - 1,8],[size - 2,8],[size - 3,8],[size - 4,8],[size - 5,8],[size - 6,8],[size - 7,8],[8,size - 8],[8,size - 7],[8,size - 6],[8,size - 5],[8,size - 4],[8,size - 3],[8,size - 2],[8,size - 1]];
+
+        first.forEach(([x, y], index) => {
+          modules[y][x] = bits[index] === 1;
+          reserved[y][x] = true;
+        });
+        second.forEach(([x, y], index) => {
+          modules[y][x] = bits[index] === 1;
+          reserved[y][x] = true;
+        });
+      }
+
+      function placeDataBits(modules, reserved, bits) {
+        const size = modules.length;
+        let bitIndex = 0;
+        let upward = true;
+
+        for (let column = size - 1; column > 0; column -= 2) {
+          if (column === 6) {
+            column -= 1;
+          }
+
+          for (let offset = 0; offset < size; offset += 1) {
+            const row = upward ? size - 1 - offset : offset;
+            for (let currentColumn = column; currentColumn >= column - 1; currentColumn -= 1) {
+              if (reserved[row][currentColumn]) {
+                continue;
+              }
+
+              const bit = bitIndex < bits.length ? bits[bitIndex] === 1 : false;
+              const masked = bit !== ((row + currentColumn) % 2 === 0);
+              modules[row][currentColumn] = masked;
+              bitIndex += 1;
+            }
+          }
+
+          upward = !upward;
+        }
+      }
+
+      function isInside(size, x, y) {
+        return x >= 0 && x < size && y >= 0 && y < size;
+      }
+
+      function byteToBits(byte) {
+        return [7, 6, 5, 4, 3, 2, 1, 0].map(shift => (byte >> shift) & 1);
+      }
+
+      function bitsToByte(bits) {
+        return bits.reduce((value, bit) => (value << 1) | bit, 0);
       }
     })();
   </script>
