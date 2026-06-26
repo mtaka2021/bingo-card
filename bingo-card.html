@@ -255,8 +255,8 @@
       display: grid;
       place-items: center;
       margin: 12px auto;
-      padding: 12px;
-      width: min(100%, 292px);
+      padding: 10px;
+      width: min(100%, 360px);
       border-radius: 16px;
       background: #fff;
       border: 4px solid #202046;
@@ -265,7 +265,8 @@
     #bingoQr {
       width: min(100%, 320px);
       height: auto;
-      image-rendering: pixelated;
+      display: block;
+      background: #fff;
     }
 
     .dialog-text {
@@ -324,7 +325,7 @@
     <div class="dialog-card">
       <h2 id="qrTitle">BINGO確認</h2>
       <div class="qr-box">
-        <canvas id="bingoQr" width="320" height="320"></canvas>
+        <img id="bingoQr" width="320" height="320" alt="BINGO確認QR">
       </div>
       <p id="qrLineText" class="dialog-text"></p>
       <button id="closeQrButton" class="action danger" type="button">閉じる</button>
@@ -353,7 +354,7 @@
       const resetButton = document.getElementById("resetButton");
       const qrDialog = document.getElementById("qrDialog");
       const closeQrButton = document.getElementById("closeQrButton");
-      const qrCanvas = document.getElementById("bingoQr");
+      const qrImage = document.getElementById("bingoQr");
       const qrLineText = document.getElementById("qrLineText");
 
       let state = loadState();
@@ -369,7 +370,7 @@
 
         const values = line.map(index => index === FREE_INDEX ? 0 : state.numbers[index]);
         const payload = encodeBingoPayload(values);
-        drawQRCode(qrCanvas, payload);
+        qrImage.src = createQRCodeURL(payload);
         qrLineText.textContent = `確認番号: ${values.map(value => value === 0 ? "FREE" : value).join(" / ")}`;
         qrDialog.classList.add("visible");
       });
@@ -559,10 +560,17 @@
       }
 
       function encodeBingoPayload(values) {
-        const encodedNumbers = values
-          .map(value => Number(value).toString(36).toUpperCase().padStart(2, "0"))
-          .join("");
-        return `B1:${encodedNumbers}`;
+        return `BINGO1:${values.join(",")}`;
+      }
+
+      function createQRCodeURL(text) {
+        const baseURL = "https://api.qrserver.com/v1/create-qr-code/";
+        const params = new URLSearchParams({
+          size: "360x360",
+          margin: "16",
+          data: text
+        });
+        return `${baseURL}?${params.toString()}`;
       }
 
       function drawQRCode(canvas, text) {
