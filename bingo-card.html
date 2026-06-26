@@ -263,8 +263,8 @@
     }
 
     #bingoQr {
-      width: 256px;
-      height: 256px;
+      width: min(100%, 320px);
+      height: auto;
       image-rendering: pixelated;
     }
 
@@ -324,7 +324,7 @@
     <div class="dialog-card">
       <h2 id="qrTitle">BINGO確認</h2>
       <div class="qr-box">
-        <canvas id="bingoQr" width="256" height="256"></canvas>
+        <canvas id="bingoQr" width="320" height="320"></canvas>
       </div>
       <p id="qrLineText" class="dialog-text"></p>
       <button id="closeQrButton" class="action danger" type="button">閉じる</button>
@@ -368,7 +368,7 @@
         }
 
         const values = line.map(index => index === FREE_INDEX ? 0 : state.numbers[index]);
-        const payload = `BINGO1:${values.join(",")}`;
+        const payload = encodeBingoPayload(values);
         drawQRCode(qrCanvas, payload);
         qrLineText.textContent = `確認番号: ${values.map(value => value === 0 ? "FREE" : value).join(" / ")}`;
         qrDialog.classList.add("visible");
@@ -558,6 +558,13 @@
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       }
 
+      function encodeBingoPayload(values) {
+        const encodedNumbers = values
+          .map(value => Number(value).toString(36).toUpperCase().padStart(2, "0"))
+          .join("");
+        return `B1:${encodedNumbers}`;
+      }
+
       function drawQRCode(canvas, text) {
         const modules = createQRCodeModules(text);
         const context = canvas.getContext("2d");
@@ -580,10 +587,10 @@
       }
 
       function createQRCodeModules(text) {
-        const version = 2;
-        const size = 25;
-        const dataCodewords = 34;
-        const ecCodewords = 10;
+        const version = 1;
+        const size = 21;
+        const dataCodewords = 19;
+        const ecCodewords = 7;
         const modules = Array.from({ length: size }, () => Array(size).fill(false));
         const reserved = Array.from({ length: size }, () => Array(size).fill(false));
 
@@ -591,7 +598,6 @@
         placeFinder(modules, reserved, size - 7, 0);
         placeFinder(modules, reserved, 0, size - 7);
         placeTiming(modules, reserved);
-        placeAlignment(modules, reserved, 18, 18);
         reserveFormatAreas(reserved);
         modules[4 * version + 9][8] = true;
         reserved[4 * version + 9][8] = true;
